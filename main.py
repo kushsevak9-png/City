@@ -4,6 +4,7 @@ import time
 import hmac
 import hashlib
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 import pandas as pd
@@ -22,14 +23,55 @@ LOGIN_LOCK_MINUTES = 10
 DEFAULT_ADMIN_PASSWORD = os.getenv("CITYBUS_DEFAULT_ADMIN_PASSWORD", "admin123")
 ADMIN_ACCESS_CODE = os.getenv("CITYBUS_ADMIN_ACCESS_CODE", "789641").strip()
 
+def _build_db_config() -> dict:
+    """Build DB config from Streamlit secrets, DATABASE_URL, or env vars."""
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        parsed = urlparse(db_url)
+        if parsed.scheme.startswith("postgres"):
+            return {
+                "host": parsed.hostname or "",
+                "database": (parsed.path or "").lstrip("/"),
+                "user": parsed.username or "",
+                "password": parsed.password or "",
+                "port": parsed.port or 5432,
+                "sslmode": os.getenv("CITYBUS_DB_SSLMODE", "require"),
+            }
+
+    # Streamlit Cloud secrets.toml support:
+    # [database]
+    # host = "..."
+    # name = "..."
+    # user = "..."
+    # password = "..."
+    # port = 5432
+    # sslmode = "require"
+    try:
+        if "database" in st.secrets:
+            secret_db = st.secrets["database"]
+            return {
+                "host": secret_db.get("host", ""),
+                "database": secret_db.get("name", secret_db.get("database", "")),
+                "user": secret_db.get("user", ""),
+                "password": secret_db.get("password", ""),
+                "port": int(secret_db.get("port", 5432)),
+                "sslmode": secret_db.get("sslmode", os.getenv("CITYBUS_DB_SSLMODE", "require")),
+            }
+    except Exception:
+        pass
+
+    return {
+        "host": os.getenv("CITYBUS_DB_HOST", "localhost"),
+        "database": os.getenv("CITYBUS_DB_NAME", "brts_db"),
+        "user": os.getenv("CITYBUS_DB_USER", "postgres"),
+        "password": os.getenv("CITYBUS_DB_PASSWORD", ""),
+        "port": int(os.getenv("CITYBUS_DB_PORT", "5432")),
+        "sslmode": os.getenv("CITYBUS_DB_SSLMODE", "prefer"),
+    }
+
+
 # Database Configuration
-DB_CONFIG = {
-    'host': os.getenv("CITYBUS_DB_HOST", "localhost"),
-    'database': os.getenv("CITYBUS_DB_NAME", "brts_db"),
-    'user': os.getenv("CITYBUS_DB_USER", "postgres"),
-    'password': os.getenv("CITYBUS_DB_PASSWORD", "Aashvi74"),
-    'port': int(os.getenv("CITYBUS_DB_PORT", "5432"))
-}
+DB_CONFIG = _build_db_config()
 
 # Database Connection
 @st.cache_resource
@@ -55,6 +97,11 @@ def get_connection():
         return conn
     except Error as e:
         st.error(f"Database connection error: {e}")
+        if DB_CONFIG.get("host") in {"localhost", "127.0.0.1", "::1"}:
+            st.info(
+                "Set a remote PostgreSQL in Streamlit Secrets or DATABASE_URL. "
+                "Localhost does not work on Streamlit Cloud."
+            )
         return None
 
 
