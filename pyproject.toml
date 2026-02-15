@@ -1,0 +1,13 @@
+[project]
+name = "brts-portal"
+version = "0.1.0"
+dependencies = [
+    "streamlit",
+    "psycopg2-binary",
+    "pandas",
+    "plotly",
+]
+
+[tool.pyre]
+source_directories = ["."]
+site_package_path = "C:/Users/KHS/AppData/Local/Programs/Python/Python314/Lib/site-packages"
